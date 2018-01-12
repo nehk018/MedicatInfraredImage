@@ -54,9 +54,13 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
 
     #Define Widgets layout
     lm = slicer.app.layoutManager()
-    lm.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutSideBySideView)
+    lm.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutThreeOverThreeView)
     lm.sliceWidget('Red').setSliceOrientation('Axial')
+    lm.sliceWidget('Red+').setSliceOrientation('Axial')
     lm.sliceWidget('Yellow').setSliceOrientation('Axial')
+    lm.sliceWidget('Yellow+').setSliceOrientation('Axial')
+    lm.sliceWidget('Green').setSliceOrientation('Axial')
+    lm.sliceWidget('Green+').setSliceOrientation('Axial')
 
     #
     # Parameters Area
@@ -107,14 +111,6 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
     self.takeImageButton.enabled = True
     parametersFormLayout.addRow(self.takeImageButton)
 
-     #
-    # Processing Button
-    #
-    self.extractButton = qt.QPushButton("Apply Segmentation")
-    self.extractButton.toolTip = "Run the algorithm."
-    self.extractButton.enabled = False
-    parametersFormLayout.addRow(self.extractButton)
-
     #
     # Processing selector
     #
@@ -140,8 +136,6 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
     self.doubleMinTemp.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
     self.doubleMinTemp.setDecimals(2)
     self.doubleMinTemp.setValue(27.0)
-    #self.doubleMinTemp.setSingleStep(0.5)
-    #self.doubleMinTemp.setRange(0,45)
     self.tempHBoxLayout.addWidget(self.qlabelMin)
     self.tempHBoxLayout.addWidget(self.doubleMinTemp)
 
@@ -182,7 +176,6 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
     self.seedFiducialsBox.addWidget(self.seedLeftFiducialsNodeSelector)
     self.leftFiducial=qt.QGroupBox("Left: ")
     self.leftFiducial.setLayout(self.seedFiducialsBox)
-    
 
     # Seed Right selector
     self.seedRightFiducialsNodeSelector = slicer.qSlicerSimpleMarkupsWidget()
@@ -214,8 +207,15 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
     # #Set Group
     self.segmentationGroupBox.setLayout(self.segmentationVBoxLayout)
     
-    parametersFormLayout.addRow(self.segmentationGroupBox);
+    parametersFormLayout.addRow(self.segmentationGroupBox)
 
+    #
+    # Processing Button
+    #
+    self.extractButton = qt.QPushButton("Apply Segmentation")
+    self.extractButton.toolTip = "Run the algorithm."
+    # self.extractButton.enabled = False
+    parametersFormLayout.addRow(self.extractButton)
 
     # connections
     self.extractButton.connect('clicked(bool)', self.onExtractButton)
@@ -233,12 +233,21 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
 
   def onExtractButton(self):
     logic = IrBaseUlcerDetectionLogic()
-    rightPoint = self.seedRightFiducialsNodeSelector.currentNode()
+    # Other access method
+    # arr = [0,0,0]
+    # self.seedRightFiducialsNodeSelector.currentNode().GetMarkupPoint(self.seedRightFiducialsNodeSelector.currentNode().GetNumberOfMarkups()-1,0,arr)
+
+    leftCoordinatesRAS = [0, 0, 0]
     leftPoint = self.seedLeftFiducialsNodeSelector.currentNode()
-    # slicer.mrmlScene.getNodeBy
-    print(rightPoint.GetPosition())
-    print(leftPoint)
-    # logic.runSegmentation(self.outputSelector, self.processingSelector, self.doubleMinTemp.value, self.doubleMaxTemp.value)
+    leftPoint.GetNthFiducialPosition(0,leftCoordinatesRAS)
+
+    rightCoordinatesRAS = [0, 0, 0]
+    rightPoint = self.seedRightFiducialsNodeSelector.currentNode()
+    rightPoint.GetNthFiducialPosition(0,rightCoordinatesRAS)
+
+
+    # rightImage = logic.processVolume(self.outputSelector,self.processingSelector, self.doubleMinTemp.value, self.doubleMaxTemp.value, rightCoordinatesRAS)
+    logic.runSegmentation(self.outputSelector, self.processingSelector, self.doubleMinTemp.value, self.doubleMaxTemp.value, rightCoordinatesRAS, leftCoordinatesRAS)
  
   def onTakeImageButton(self):
     logic = IrBaseUlcerDetectionLogic()
@@ -246,7 +255,8 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
 
   def onSelectWorkingImage(self):
     self.extractButton.enabled = self.outputSelector.currentNode()
-    # display image in yellow Slice viwer
+    
+    # display image in Yellow Slice viwer
     lm = slicer.app.layoutManager()
     yellow = lm.sliceWidget('Yellow')
     yellow.setSliceOrientation('Axial')
@@ -256,7 +266,7 @@ class IrBaseUlcerDetectionWidget(ScriptedLoadableModuleWidget):
 
   def onProcessing(self):
     logic = IrBaseUlcerDetectionLogic()
-    logic.runProcessing(self.outputSelector, self.processingSelector, self.qdoubleSpinBoxMin.value, self.doubleMaxTemp.value)
+    logic.runProcessing(self.outputSelector, self.processingSelector, self.doubleMinTemp.value, self.doubleMaxTemp.value)
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -273,104 +283,27 @@ class IrBaseUlcerDetectionLogic(ScriptedLoadableModuleLogic):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
-  # def hasImageData(self,volumeNode):
-  #   """This is an example logic method that
-  #   returns true if the passed in volume
-  #   node has valid image data
-  #   """
-  #   if not volumeNode:
-  #     logging.debug('hasImageData failed: no volume node')
-  #     return False
-  #   if volumeNode.GetImageData() is None:
-  #     logging.debug('hasImageData failed: no image data in volume node')
-  #     return False
-  #   return True
-
-  # def isValidInputOutputData(self, inputVolumeNode, outputVolumeNode):
-  #   """Validates if the output is not the same as input
-  #   """
-  #   if not inputVolumeNode:
-  #     logging.debug('isValidInputOutputData failed: no input volume node defined')
-  #     return False
-  #   if not outputVolumeNode:
-  #     logging.debug('isValidInputOutputData failed: no output volume node defined')
-  #     return False
-  #   if inputVolumeNode.GetID()==outputVolumeNode.GetID():
-  #     logging.debug('isValidInputOutputData failed: input and output volume is the same. Create a new volume for output to avoid this error.')
-  #     return False
-  #   return True
-
-  # def takeScreenshot(self,name,description,type=-1):
-  #   # show the message even if not taking a screen shot
-  #   slicer.util.delayDisplay('Take screenshot: '+description+'.\nResult is available in the Annotations module.', 3000)
-
-  #   lm = slicer.app.layoutManager()
-  #   # switch on the type to get the requested window
-  #   widget = 0
-  #   if type == slicer.qMRMLScreenShotDialog.FullLayout:
-  #     # full layout
-  #     widget = lm.viewport()
-  #   elif type == slicer.qMRMLScreenShotDialog.ThreeD:
-  #     # just the 3D window
-  #     widget = lm.threeDWidget(0).threeDView()
-  #   elif type == slicer.qMRMLScreenShotDialog.Red:
-  #     # red slice window
-  #     widget = lm.sliceWidget("Red")
-  #   elif type == slicer.qMRMLScreenShotDialog.Yellow:
-  #     # yellow slice window
-  #     widget = lm.sliceWidget("Yellow")
-  #   elif type == slicer.qMRMLScreenShotDialog.Green:
-  #     # green slice window
-  #     widget = lm.sliceWidget("Green")
-  #   else:
-  #     # default to using the full window
-  #     widget = slicer.util.mainWindow()
-  #     # reset the type so that the node is set correctly
-  #     type = slicer.qMRMLScreenShotDialog.FullLayout
-
-  #   # grab and convert to vtk image data
-  #   qimage = ctk.ctkWidgetsUtils.grabWidget(widget)
-  #   imageData = vtk.vtkImageData()
-  #   slicer.qMRMLUtils().qImageToVtkImageData(qimage,imageData)
-
-  #   annotationLogic = slicer.modules.annotations.logic()
-  #   annotationLogic.CreateSnapShot(name, description, type, 1, imageData)
-
-  # def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
-  #   """
-  #   Run the actual algorithm
-  #   """
-
-  #   if not self.isValidInputOutputData(inputVolume, outputVolume):
-  #     slicer.util.errorDisplay('Input volume is the same as output volume. Choose a different output volume.')
-  #     return False
-
-  #   logging.info('Processing started')
-
-  #   # Compute the thresholded output volume using the Threshold Scalar Volume CLI module
-  #   cliParams = {'InputVolume': inputVolume.GetID(), 'OutputVolume': outputVolume.GetID(), 'ThresholdValue' : imageThreshold, 'ThresholdType' : 'Above'}
-  #   cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True)
-
-  #   # Capture screenshot
-  #   if enableScreenshots:
-  #     self.takeScreenshot('IrBaseUlcerDetectionTest-Start','MyScreenshot',-1)
-
-  #   logging.info('Processing completed')
-
-  #   return True
-
   def runTakeImage(self, inputVolume):
     #clone volume
     volumesLogic = slicer.modules.volumes.logic()
     workingVolume = volumesLogic.CloneVolume(slicer.mrmlScene, inputVolume, 'workingVolume')
     return workingVolume
+  
+  def rasToXYZ(self,rasPoint):
+    """return x y for a give r a s"""
+    sliceNode = self.sliceLogic.GetSliceNode()
+    rasToXY = vtk.vtkMatrix4x4()
+    rasToXY.DeepCopy(sliceNode.GetXYToRAS())
+    rasToXY.Invert()
+    xyzw = rasToXY.MultiplyPoint(rasPoint+(1,))
+    return xyzw[:3]
 
-  def runSegmentation(self, workingSelector, processingSelector,tempMin,tempMax):
-    """
-    Run the actual algorithm
-    """
-    #outputVolume=workingSelector.currentNode()
+  def processVolume(self, workingSelector, processingSelector,tempMin,tempMax, coordinates, name):
+    print("processing")
+    
     inputImage = sitkUtils.PullVolumeFromSlicer(workingSelector.currentNode())
+    volumesLogic = slicer.modules.volumes.logic()
+    processedVolume = volumesLogic.CloneVolume(slicer.mrmlScene, workingSelector.currentNode(), name)
 
     #extract image from volume
     zslice = 0
@@ -387,7 +320,12 @@ class IrBaseUlcerDetectionLogic(ScriptedLoadableModuleLogic):
     imgSmooth =  sitk.CurvatureFlow(image1=outputImage, timeStep=0.125, numberOfIterations=5)
 
     # step 2) filtering: segmentation
-    lstSeeds = [(183, 150)]
+    # aux = self.rasToXYZ(coordinates)
+    # coordinates=[197, 140, 190,2]
+    lstSeeds = [()]
+    lstSeeds[0] = tuple(coordinates[0:2])
+    print(lstSeeds)
+    print(coordinates)
     labelLeftHand=1
     imgLeftHand = sitk.ConnectedThreshold(image1=imgSmooth, seedList=lstSeeds, lower=tempMin, upper=tempMax, replaceValue=labelLeftHand)
 
@@ -397,28 +335,44 @@ class IrBaseUlcerDetectionLogic(ScriptedLoadableModuleLogic):
     outI=sitk.LabelOverlay(imgSmoothInt, imgLeftHand)
     outI2 = sitk.Multiply(imgSmooth,  sitk.Cast ( imgLeftHand, sitk.sitkFloat64 ) )
 
-    #step4) Push image to VTK volume
-    #if not processedVolume:
-    #  print("output node should exist and be selected before processing is performed")
+    return outI2
+
+  def visualizationImages(self, workingSelector, viewerName, img, name):
     volumesLogic = slicer.modules.volumes.logic()
-    processedVolume = volumesLogic.CloneVolume(slicer.mrmlScene, workingSelector.currentNode(), 'processedVolume')
+    processedVolume = volumesLogic.CloneVolume(slicer.mrmlScene, workingSelector.currentNode(), name)
 
     workingSelector.setCurrentNode(processedVolume)
     #processedVolume= workingSelector.currentNode()
-    outNode = sitkUtils.PushVolumeToSlicer(outI2, targetNode=workingSelector.currentNode(), name=None, className='vtkMRMLScalarVolumeNode')
+    outNode = sitkUtils.PushVolumeToSlicer(img, targetNode=workingSelector.currentNode(), name=None, className='vtkMRMLScalarVolumeNode')
 
-    # step 4) display image in yellow Slice viwer
+    # step 4) display image in Slice viwer
     lm = slicer.app.layoutManager()
-    yellow = lm.sliceWidget('Yellow')
-    yellowLogic = yellow.sliceLogic()
-    yellowLogic.GetSliceCompositeNode().SetBackgroundVolumeID(workingSelector.currentNode().GetID())
-    yellow.setSliceOrientation('Axial')
-    view=yellow.sliceView()
+    sliceViewer = lm.sliceWidget(viewerName)
+    sliceViewerLogic = sliceViewer.sliceLogic()
+    sliceViewerLogic.GetSliceCompositeNode().SetBackgroundVolumeID(workingSelector.currentNode().GetID())
+    sliceViewer.setSliceOrientation('Axial')
+    view=sliceViewer.sliceView()
     view.forceRender()
     # Set the orientation to axial
-    yellowLogic.GetSliceNode().UpdateMatrices()
-    yellowLogic.EndSliceNodeInteraction()
-    print("image displayed")
+    sliceViewerLogic.GetSliceNode().UpdateMatrices()
+    sliceViewerLogic.EndSliceNodeInteraction()
+
+
+  def runSegmentation(self, workingSelector, processingSelector,tempMin,tempMax, rightCoordinatesRAS, leftCoordinatesRAS):
+    """
+    Run the actual algorithm
+    """
+    #outputVolume=workingSelector.currentNode()
+
+    rightImage = self.processVolume(workingSelector, processingSelector, tempMin, tempMax, [70,117,1], "RightVolumen")
+    # rightImage = self.processVolume(workingSelector, processingSelector, tempMin, tempMax, rightCoordinatesRAS)
+    self.visualizationImages(workingSelector, "Yellow+", rightImage, "RightVolumen")
+
+    leftImage = self.processVolume(workingSelector, processingSelector, tempMin, tempMax, [206,41,1], "LeftVolumen")
+    # leftImage = self.processVolume(workingSelector, processingSelector, tempMin, tempMax, leftCoordinatesRAS)
+    self.visualizationImages(workingSelector, "Red+", leftImage, "LeftVolumen")
+  
+    print("Images processed")
 
   def runProcessing(self, workingSelector, processingSelector,tempMin,tempMax):
 
@@ -499,19 +453,106 @@ class IrBaseUlcerDetectionLogic(ScriptedLoadableModuleLogic):
     # processedVolume= workingSelector.currentNode()
     outNode = sitkUtils.PushVolumeToSlicer(outI2, targetNode=workingSelector.currentNode(), name=None, className='vtkMRMLScalarVolumeNode')
 
-    # step 4) display image in yellow Slice viwer
+    # step 4) display image in green Slice viwer
     lm = slicer.app.layoutManager()
-    yellow = lm.sliceWidget('Yellow')
-    yellowLogic = yellow.sliceLogic()
-    yellowLogic.GetSliceCompositeNode().SetBackgroundVolumeID(workingSelector.currentNode().GetID())
-    yellow.setSliceOrientation('Axial')
-    view = yellow.sliceView()
+    green = lm.sliceWidget('green')
+    greenLogic = green.sliceLogic()
+    greenLogic.GetSliceCompositeNode().SetBackgroundVolumeID(workingSelector.currentNode().GetID())
+    green.setSliceOrientation('Axial')
+    view = green.sliceView()
     view.forceRender()
     # Set the orientation to axial
-    yellowLogic.GetSliceNode().UpdateMatrices()
-    yellowLogic.EndSliceNodeInteraction()
+    greenLogic.GetSliceNode().UpdateMatrices()
+    greenLogic.EndSliceNodeInteraction()
 
     return
+
+
+  # def hasImageData(self,volumeNode):
+  #   """This is an example logic method that
+  #   returns true if the passed in volume
+  #   node has valid image data
+  #   """
+  #   if not volumeNode:
+  #     logging.debug('hasImageData failed: no volume node')
+  #     return False
+  #   if volumeNode.GetImageData() is None:
+  #     logging.debug('hasImageData failed: no image data in volume node')
+  #     return False
+  #   return True
+
+  # def isValidInputOutputData(self, inputVolumeNode, outputVolumeNode):
+  #   """Validates if the output is not the same as input
+  #   """
+  #   if not inputVolumeNode:
+  #     logging.debug('isValidInputOutputData failed: no input volume node defined')
+  #     return False
+  #   if not outputVolumeNode:
+  #     logging.debug('isValidInputOutputData failed: no output volume node defined')
+  #     return False
+  #   if inputVolumeNode.GetID()==outputVolumeNode.GetID():
+  #     logging.debug('isValidInputOutputData failed: input and output volume is the same. Create a new volume for output to avoid this error.')
+  #     return False
+  #   return True
+
+  # def takeScreenshot(self,name,description,type=-1):
+  #   # show the message even if not taking a screen shot
+  #   slicer.util.delayDisplay('Take screenshot: '+description+'.\nResult is available in the Annotations module.', 3000)
+
+  #   lm = slicer.app.layoutManager()
+  #   # switch on the type to get the requested window
+  #   widget = 0
+  #   if type == slicer.qMRMLScreenShotDialog.FullLayout:
+  #     # full layout
+  #     widget = lm.viewport()
+  #   elif type == slicer.qMRMLScreenShotDialog.ThreeD:
+  #     # just the 3D window
+  #     widget = lm.threeDWidget(0).threeDView()
+  #   elif type == slicer.qMRMLScreenShotDialog.Red:
+  #     # red slice window
+  #     widget = lm.sliceWidget("Red")
+  #   elif type == slicer.qMRMLScreenShotDialog.green:
+  #     # green slice window
+  #     widget = lm.sliceWidget("green")
+  #   elif type == slicer.qMRMLScreenShotDialog.Green:
+  #     # green slice window
+  #     widget = lm.sliceWidget("Green")
+  #   else:
+  #     # default to using the full window
+  #     widget = slicer.util.mainWindow()
+  #     # reset the type so that the node is set correctly
+  #     type = slicer.qMRMLScreenShotDialog.FullLayout
+
+  #   # grab and convert to vtk image data
+  #   qimage = ctk.ctkWidgetsUtils.grabWidget(widget)
+  #   imageData = vtk.vtkImageData()
+  #   slicer.qMRMLUtils().qImageToVtkImageData(qimage,imageData)
+
+  #   annotationLogic = slicer.modules.annotations.logic()
+  #   annotationLogic.CreateSnapShot(name, description, type, 1, imageData)
+
+  # def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
+  #   """
+  #   Run the actual algorithm
+  #   """
+
+  #   if not self.isValidInputOutputData(inputVolume, outputVolume):
+  #     slicer.util.errorDisplay('Input volume is the same as output volume. Choose a different output volume.')
+  #     return False
+
+  #   logging.info('Processing started')
+
+  #   # Compute the thresholded output volume using the Threshold Scalar Volume CLI module
+  #   cliParams = {'InputVolume': inputVolume.GetID(), 'OutputVolume': outputVolume.GetID(), 'ThresholdValue' : imageThreshold, 'ThresholdType' : 'Above'}
+  #   cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True)
+
+  #   # Capture screenshot
+  #   if enableScreenshots:
+  #     self.takeScreenshot('IrBaseUlcerDetectionTest-Start','MyScreenshot',-1)
+
+  #   logging.info('Processing completed')
+
+  #   return True
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #  TESTS
